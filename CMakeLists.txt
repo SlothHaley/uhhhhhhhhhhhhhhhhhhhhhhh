@@ -18,9 +18,7 @@ target_link_libraries(foldertrace
   taihen_stub
   SceLibKernel_stub
   SceIofilemgr_stub
-  SceThreadmgr_stub
   SceProcessmgr_stub
-  SceModulemgr_stub
 )
 
 vita_create_self(foldertrace.suprx foldertrace CONFIG exports.yml UNSAFE)
