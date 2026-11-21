@@ -23,7 +23,7 @@
  */
 
 #include <stdint.h>
-#include <string.h>
+#include <stddef.h>
 #include <psp2/kernel/modulemgr.h>
 #include <psp2/kernel/threadmgr.h>
 #include <psp2/kernel/processmgr.h>
@@ -42,6 +42,18 @@
 #define LOG_CAP           (16u * 1024u * 1024u)
 #define BIN_CAP           (32u * 1024u * 1024u)
 #define GUARD_SECONDS     90
+
+
+/* -nostdlib build: no libc, so tiny local helpers (no libc calls, no newlib state) */
+static uint32_t ft_strlen(const char *s) { uint32_t n = 0; while (s[n]) n++; return n; }
+static void ft_strcpy(char *d, const char *s) { while ((*d++ = *s++)) {} }
+static void ft_strcat(char *d, const char *s) { d += ft_strlen(d); ft_strcpy(d, s); }
+static int ft_memcmp(const void *a, const void *b, uint32_t n) {
+  const uint8_t *x = (const uint8_t *)a, *y = (const uint8_t *)b;
+  for (uint32_t i = 0; i < n; i++) if (x[i] != y[i]) return (int)x[i] - (int)y[i];
+  return 0;
+}
+static void ft_memset(void *p, int v, uint32_t n) { volatile uint8_t *q = (volatile uint8_t *)p; while (n--) *q++ = (uint8_t)v; }
 
 typedef struct {
   const char *name;
@@ -117,7 +129,7 @@ static int plausible(uint32_t w) { return w >= 0x81000000u && w < 0xA0000000u &&
 /* ------------------------------------------------------------------- files */
 static int exists(const char *name) {
   char p[96];
-  strcpy(p, base); strcat(p, "/"); strcat(p, name);
+  ft_strcpy(p, base); ft_strcat(p, "/"); ft_strcat(p, name);
   int fd = sceIoOpen(p, SCE_O_RDONLY, 0);
   if (fd < 0) return 0;
   sceIoClose(fd);
@@ -125,17 +137,17 @@ static int exists(const char *name) {
 }
 static int open_in(const char *name, int flags) {
   char p[96];
-  strcpy(p, base); strcat(p, "/"); strcat(p, name);
+  ft_strcpy(p, base); ft_strcat(p, "/"); ft_strcat(p, name);
   return sceIoOpen(p, flags, 0777);
 }
 static void touch(const char *name) { int fd = open_in(name, SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC); if (fd >= 0) sceIoClose(fd); }
-static void rm(const char *name) { char p[96]; strcpy(p, base); strcat(p, "/"); strcat(p, name); sceIoRemove(p); }
+static void rm(const char *name) { char p[96]; ft_strcpy(p, base); ft_strcat(p, "/"); ft_strcat(p, name); sceIoRemove(p); }
 
 static int pick_base(void) {
   static const char *c[2] = { "ur0:data/foldertrace", "ux0:data/foldertrace" };
   for (int i = 0; i < 2; i++) {
     sceIoMkdir(c[i], 0777);              /* ok if it already exists */
-    strcpy(base, c[i]);
+    ft_strcpy(base, c[i]);
     int fd = open_in("probe.tmp", SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC);
     if (fd >= 0) { sceIoClose(fd); rm("probe.tmp"); return 1; }
   }
@@ -204,7 +216,7 @@ static void trace_enter(uint32_t id, uint32_t lr, const uint32_t *args) {
   last_t = t;
 
   SceKernelThreadInfo ti;
-  memset(&ti, 0, sizeof(ti));
+  ft_memset(&ti, 0, sizeof(ti));
   ti.size = sizeof(ti);
   int have_ti = sceKernelGetThreadInfo(sceKernelGetThreadId(), &ti) >= 0;
 
@@ -325,7 +337,7 @@ int module_start(SceSize argc, const void *args) {
   if (gt >= 0) sceKernelStartThread(gt, 0, NULL);
 
   tai_module_info_t ti;
-  memset(&ti, 0, sizeof(ti));
+  ft_memset(&ti, 0, sizeof(ti));
   ti.size = sizeof(ti);
   if (taiGetModuleInfo(SHELL_NAME, &ti) < 0) {
     status_line(st, "FAIL: taiGetModuleInfo(SceShell)", 0, 0, 0);
@@ -334,7 +346,7 @@ int module_start(SceSize argc, const void *args) {
     return SCE_KERNEL_START_NO_RESIDENT;
   }
   SceKernelModuleInfo mi;
-  memset(&mi, 0, sizeof(mi));
+  ft_memset(&mi, 0, sizeof(mi));
   mi.size = sizeof(mi);
   if (sceKernelGetModuleInfo(ti.modid, &mi) < 0) {
     status_line(st, "FAIL: sceKernelGetModuleInfo", 0, 0, 0);
@@ -359,7 +371,7 @@ int module_start(SceSize argc, const void *args) {
   for (int i = 0; i < NH; i++) {
     g_uid[i] = -1;
     const uint8_t *fn = (const uint8_t *)(uintptr_t)(text_lo + H[i].off);
-    if (H[i].off + 10 > text_hi - text_lo || memcmp(fn, H[i].exp, H[i].n) != 0) {
+    if (H[i].off + 10 > text_hi - text_lo || ft_memcmp(fn, H[i].exp, H[i].n) != 0) {
       status_line(st, "SKIP (prologue mismatch): ", H[i].name, H[i].off, 1);
       continue;
     }
